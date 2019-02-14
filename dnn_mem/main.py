@@ -8,6 +8,8 @@ import torchvision.datasets
 
 import numpy as np
 import skimage
+from scipy.misc import toimage
+
 from matplotlib import pyplot as plt
 import matplotlib.image as mpimg
 from tifffile import imsave
@@ -34,9 +36,10 @@ train_image = skimage.io.imread(os.path.join(DATA_PATH, 'train-volume.tif'), plu
 label_image = skimage.io.imread(os.path.join(DATA_PATH, 'train-labels.tif'), plugin='tifffile')
 test_image = skimage.io.imread(os.path.join(DATA_PATH, 'test-volume.tif'), plugin='tifffile')
 
-window_size = 65
+window_size = 95
 n_picture = 30
 new_dataset = 0
+new_test_dataset = 0
 if (new_dataset == 1):
     f = open('data_csv.csv', 'w', encoding='utf-8', newline='')
     wr = csv.writer(f)
@@ -48,6 +51,18 @@ if (new_dataset == 1):
             patch_filename = "./image_patch/" + str(pic*1000+i) + ".tif"
             imsave(patch_filename, patches_train[rand_int])
             wr.writerow([pic*1000+i, int(patches_label[rand_int,int((window_size-1)/2),int((window_size-1)/2)]/255)])
+    f.close()
+
+if (new_test_dataset == 1):
+    f = open('data_csv_test.csv', 'w', encoding='utf-8', newline='')
+    wr = csv.writer(f)
+    for pic in range(1):
+        patches_test = image.extract_patches_2d(test_image[pic], (window_size, window_size))
+        rng = int(patches_test.shape[0]-1)
+        for i in range(rng):
+            patch_filename = "./image_patch_test/" + str(i) + ".tif"
+            imsave(patch_filename, patches_test[pic*1000+i])
+            wr.writerow([pic*1000+i])
     f.close()
 
 
@@ -67,19 +82,31 @@ class MemDataset(torch.utils.data.Dataset):
         label = self.y_data[index]
         return image, label
     def __len__(self):
+        return self.length
 
 
+class MemDataset_test(torch.utils.data.Dataset):
+    def __init__(self):
+        patches_test = image.extract_patches_2d(test_image[0], (window_size, window_size))
+        self.length = patches_test.shape[0]
+        self.x_data = patches_test
+        self.transform = transforms.Compose([transforms.ToTensor()])
+    def __getitem__(self, index):
+        image = self.transform(toimage(self.x_data[index]))
+        return image
+    def __len__(self):
         return self.length
 
 # Hyperparameters
-num_epochs = 100
+num_epochs = 1
 num_classes = 2
-batch_size = 64
+batch_size = 200
 learning_rate = 0.001
 
 train_dataset = MemDataset()
+test_dataset = MemDataset_test()
 train_loader = DataLoader(dataset=train_dataset, batch_size = batch_size, shuffle=True, num_workers=0)
-
+test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=False)
 
 '''
 labels_map = {0 : 'mem', 1 : 'non-mem'};
@@ -105,24 +132,40 @@ class ConvNet(nn.Module):
     def __init__(self):
         super(ConvNet, self).__init__()
         self.layer1 = nn.Sequential(
-            nn.Conv2d(1, 16, kernel_size=5),
+            nn.Conv2d(1, 48, kernel_size=4),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2)).to(device)
+            nn.MaxPool2d(kernel_size=2),
+        )
         self.layer2 = nn.Sequential(
-            nn.Conv2d(16, 32, kernel_size=4),
+            nn.Conv2d(48, 48, kernel_size = 5),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2)).to(device)
+            nn.MaxPool2d(kernel_size=2),
+        )
+        self.layer3 = nn.Sequential(
+            nn.Conv2d(48, 48, kernel_size = 4),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2),
+        )
+        self.layer4 = nn.Sequential(
+            nn.Conv2d(48, 48, kernel_size = 4),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2),
+        )
         self.drop_out = nn.Dropout()
-        self.fc1 = nn.Linear(5408, 200)
+        self.fc1 = nn.Linear(432, 200)
         self.fc2 = nn.Linear(200, 2)
+
 
     def forward(self, x):
         out = self.layer1(x)
         out = self.layer2(out)
+        out = self.layer3(out)
+        out = self.layer4(out)
         out = out.reshape(out.size(0), -1)
         out = self.drop_out(out)
         out = self.fc1(out)
         out = self.fc2(out)
+
         return out
 
 
@@ -146,6 +189,7 @@ for epoch in range(num_epochs):
 
 
         # Run the forward pass
+        
         outputs = model(images)
        
         labels = labels.squeeze_()
@@ -167,4 +211,25 @@ for epoch in range(num_epochs):
             print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}, Accuracy: {:.2f}%'
                   .format(epoch + 1, num_epochs, i + 1, total_step, loss.item(),
                           (correct / total) * 100))
+
+# Test the model
+model.eval()
+
+result_list = []
+f = open('data_result.csv', 'w', encoding='utf-8', newline='')
+wr = csv.writer(f)
+patches_test = image.extract_patches_2d(test_image[0], (window_size, window_size))
+total_len = patches_test.shape[0]
+wr = csv.writer(f)
+with torch.no_grad():
+    correct = 0
+    total = 0
+
+    for images in test_loader:
+        images= images.to(device)
+        outputs = model(images)
+        _, predicted = torch.max(outputs.data, 1)
+        result_list.append(predicted)
+        wr.writerow([predicted])
+f.close()
 
