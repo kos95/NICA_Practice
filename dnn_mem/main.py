@@ -33,7 +33,7 @@ torch.backends.cudnn.enabled = False
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 DATA_PATH = r'F:\Research Database\Deep_Neural_Networks_Segment_Neuronal_Membranes_in_Electorn_Microscopy_Images'
-PATCH_PATH = "./image_patch_3000/"
+PATCH_PATH = "./image_patch_20_rot/"
 MODEL_STORE_PATH = r'F:\Research Database\Deep_Neural_Networks_Segment_Neuronal_Membranes_in_Electorn_Microscopy_Images\pytorch_models'
 
 train_image = skimage.io.imread(os.path.join(DATA_PATH, 'train-volume.tif'), plugin='tifffile')
@@ -42,19 +42,20 @@ test_image = skimage.io.imread(os.path.join(DATA_PATH, 'test-volume.tif'), plugi
 
 
 # Hyperparameters
-patch_per_image = 3000
+patch_per_image = 20
 num_epochs = 150
 num_classes = 2
-batch_size = 50
+batch_size = 25
 learning_rate = 0.001
 
 window_size = 95
 n_picture = 30
 new_dataset = 1
-new_test_dataset = 0
+rotate = 1
 
 
 if (new_dataset == 1):
+    num = 0
     f = open('data_csv.csv', 'w', encoding='utf-8', newline='')
     wr = csv.writer(f)
     for pic in range(n_picture):
@@ -62,21 +63,32 @@ if (new_dataset == 1):
         patches_label = image.extract_patches_2d(label_image[pic], (window_size, window_size))
         for i in range(patch_per_image):
             rand_int = randint(0, patches_train.shape[0]-1)
-            patch_filename = PATCH_PATH + str(pic*patch_per_image+i) + ".tif"
+            patch_filename = PATCH_PATH + str(num) + ".tif"
             imsave(patch_filename, patches_train[rand_int])
-            wr.writerow([pic*patch_per_image+i, int(patches_label[rand_int,int((window_size-1)/2),int((window_size-1)/2)]/255)])
-    f.close()
+            wr.writerow([num, int(patches_label[rand_int,int((window_size-1)/2),int((window_size-1)/2)]/255)])
+            num = num+1
+            if (rotate == 1):
+                img = patches_train[rand_int]
 
-if (new_test_dataset == 1):
-    f = open('data_csv_test.csv', 'w', encoding='utf-8', newline='')
-    wr = csv.writer(f)
-    for pic in range(1):
-        patches_test = image.extract_patches_2d(test_image[pic], (window_size, window_size))
-        rng = int(patches_test.shape[0]-1)
-        for i in range(rng):
-            patch_filename = "./image_patch_test/" + str(i) + ".tif"
-            imsave(patch_filename, patches_test[pic*1000+i])
-            wr.writerow([pic*1000+i])
+                patch_filename = PATCH_PATH + str(num) + ".tif"
+                img = np.rot90(img)
+                imsave(patch_filename, img)
+                wr.writerow([num, int(patches_label[rand_int,int((window_size-1)/2),int((window_size-1)/2)]/255)])
+                num = num+1
+
+                patch_filename = PATCH_PATH + str(num) + ".tif"
+                img = np.rot90(img)
+                imsave(patch_filename, img)
+                wr.writerow([num, int(patches_label[rand_int,int((window_size-1)/2),int((window_size-1)/2)]/255)])
+                num = num+1
+
+                patch_filename = PATCH_PATH + str(num) + ".tif"
+                img = np.rot90(img)
+                imsave(patch_filename, img)
+                wr.writerow([num, int(patches_label[rand_int,int((window_size-1)/2),int((window_size-1)/2)]/255)])
+                num = num+1
+
+
     f.close()
 
 
@@ -119,7 +131,6 @@ train_dataset = MemDataset()
 test_dataset = MemDataset_test()
 train_loader = DataLoader(dataset=train_dataset, batch_size = batch_size, shuffle=True, num_workers=0)
 test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=False)
-
 
 
 # Convolutional neural network (two convolutional layers)
@@ -241,7 +252,6 @@ with torch.no_grad():
         outputs = model(images)
 
 
-        #softmax
         _, predicted = torch.max(outputs.data, 1)
 
         for i in predicted:
